@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotify Remote</title>
+<style>
+    :root {
+        --bg: #0d0f12;
+        --panel: #16191e;
+        --line: #262a31;
+        --text: #eef0f3;
+        --muted: #8a919c;
+        --accent: #1ed760;
+        --danger: #ff5c6c;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+        display: flex;
+        justify-content: center;
+        padding: 24px 16px;
+    }
+    .app {
+        width: 100%;
+        max-width: 960px;
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 16px;
+    }
+    @media (max-width: 820px) { .app { grid-template-columns: 1fr; } }
+    .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px;
+    }
+    .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+    .dot.on { background: var(--accent); }
+    .art {
+        width: 100%;
+        aspect-ratio: 1;
+        border-radius: 10px;
+        background: var(--line) center / cover no-repeat;
+    }
+    .title { font-size: 18px; font-weight: 650; margin: 14px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar {
+        position: relative;
+        height: 6px;
+        background: var(--line);
+        border-radius: 3px;
+        margin: 16px 0 6px;
+        cursor: pointer;
+    }
+    .bar > div { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; pointer-events: none; }
+    .times { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
+    .row button { padding: 8px 9px; min-width: 0; }
+    .row button.main { min-width: 64px; }
+    button {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font: inherit;
+        cursor: pointer;
+        min-width: 40px;
+    }
+    button:hover { border-color: var(--muted); }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    button.on { color: var(--accent); border-color: var(--accent); }
+    button.main { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 650; min-width: 72px; }
+    .volume { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    input[type=range] { flex: 1; accent-color: var(--accent); }
+    .uri { display: flex; gap: 8px; margin-top: 14px; }
+    input[type=text] {
+        flex: 1;
+        min-width: 0;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+    }
+    .lyrics-panel { display: flex; flex-direction: column; max-height: calc(100vh - 48px); }
+    .lyrics-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+    .lyrics { overflow-y: auto; flex: 1; scroll-behavior: smooth; padding: 30vh 0; }
+    .lyrics p {
+        margin: 0;
+        padding: 6px 4px;
+        font-size: 22px;
+        font-weight: 650;
+        color: var(--muted);
+        opacity: .45;
+        cursor: pointer;
+        transition: opacity .2s, color .2s;
+    }
+    .lyrics p.past { opacity: .7; }
+    .lyrics p.now { color: var(--text); opacity: 1; }
+    .lyrics.static p { cursor: default; opacity: .85; }
+    .empty { color: var(--muted); text-align: center; padding-top: 30vh; }
+    .error { color: var(--danger); font-size: 12px; min-height: 16px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+    <section class="panel">
+        <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting</span></div>
+        <div class="art" id="art"></div>
+        <div class="title" id="title">Nothing playing</div>
+        <div class="artist" id="artist"></div>
+        <div class="bar" id="bar"><div id="fill"></div></div>
+        <div class="times"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+        <div class="row">
+            <button id="shuffle" title="Shuffle">Shuf</button>
+            <button id="previous" title="Previous">Prev</button>
+            <button id="back10" title="Back 10s">-10</button>
+            <button id="toggle" class="main">Play</button>
+            <button id="fwd10" title="Forward 10s">+10</button>
+            <button id="next" title="Next">Next</button>
+            <button id="repeat" title="Repeat">Rep</button>
+        </div>
+        <div class="volume">
+            <button id="mute">Mute</button>
+            <input type="range" id="volume" min="0" max="100">
+            <span id="volval">0</span>
+            <button id="like">Like</button>
+        </div>
+        <div class="uri">
+            <input type="text" id="uri" placeholder="spotify:track:... or open.spotify.com link">
+            <button id="playuri">Play</button>
+        </div>
+        <div class="uri">
+            <input type="text" id="token" placeholder="API token (optional)">
+        </div>
+        <div class="error" id="error"></div>
+    </section>
+    <section class="panel lyrics-panel">
+        <div class="lyrics-head"><span>Lyrics</span><span id="sync"></span></div>
+        <div class="lyrics" id="lyrics"><div class="empty">No lyrics</div></div>
+    </section>
+</div>
+<script>
+class Api {
+    constructor(base) {
+        this.base = base;
+        try { this.token = localStorage.getItem("remote-token") || ""; } catch { this.token = ""; }
+    }
+
+    setToken(token) {
+        this.token = token;
+        try { localStorage.setItem("remote-token", token); } catch {}
+    }
+
+    url(path) {
+        return this.token ? `${this.base}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(this.token)}` : `${this.base}${path}`;
+    }
+
+    async call(path, args) {
+        const response = await fetch(this.url(path), {
+            method: args ? "POST" : "GET",
+            headers: args ? { "Content-Type": "application/json" } : {},
+            body: args ? JSON.stringify(args) : undefined
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || response.statusText);
+        return data;
+    }
+
+    events(onState, onDown) {
+        const source = new EventSource(this.url("/events"));
+        source.addEventListener("state", event => onState(JSON.parse(event.data)));
+        source.onerror = onDown;
+        return source;
+    }
+}
+
+class LyricsView {
+    constructor(root, sync, onSeek) {
+        this.root = root;
+        this.sync = sync;
+        this.onSeek = onSeek;
+        this.lines = [];
+        this.nodes = [];
+        this.index = -2;
+        this.synced = false;
+    }
+
+    load(data) {
+        this.lines = data.lines || [];
+        this.synced = data.sync_type === "LINE_SYNCED";
+        this.index = -2;
+        this.sync.textContent = data.sync_type === "NONE" ? "" : data.sync_type.replace("_", " ").toLowerCase();
+        this.root.classList.toggle("static", !this.synced);
+        this.root.replaceChildren();
+        if (!this.lines.length) {
+            this.root.innerHTML = '<div class="empty">No lyrics</div>';
+            this.nodes = [];
+            return;
+        }
+        this.nodes = this.lines.map(line => {
+            const node = document.createElement("p");
+            node.textContent = line.text || " ";
+            if (this.synced) node.onclick = () => this.onSeek(line.start_ms);
+            this.root.append(node);
+            return node;
+        });
+        this.root.scrollTop = 0;
+    }
+
+    update(position) {
+        if (!this.synced) return;
+        let index = -1;
+        for (let cursor = 0; cursor < this.lines.length && this.lines[cursor].start_ms <= position; cursor++) index = cursor;
+        if (index === this.index) return;
+        this.index = index;
+        this.nodes.forEach((node, cursor) => {
+            node.classList.toggle("now", cursor === index);
+            node.classList.toggle("past", cursor < index);
+        });
+        const node = this.nodes[index];
+        if (node) this.root.scrollTop = node.offsetTop - this.root.offsetTop - this.root.clientHeight / 2 + node.clientHeight / 2;
+    }
+}
+
+class Remote {
+    constructor() {
+        this.api = new Api("http://127.0.0.1:7979");
+        this.el = id => document.getElementById(id);
+        this.state = null;
+        this.receivedAt = 0;
+        this.trackUri = null;
+        this.dragging = false;
+        this.lyrics = new LyricsView(this.el("lyrics"), this.el("sync"), ms => this.act("/seek", { position_ms: ms }));
+        this.bind();
+        this.connect();
+        requestAnimationFrame(() => this.tick());
+    }
+
+    bind() {
+        const simple = { toggle: "/toggle", next: "/next", previous: "/previous", shuffle: "/shuffle", repeat: "/repeat", mute: "/mute", like: "/like" };
+        for (const [id, path] of Object.entries(simple)) this.el(id).onclick = () => this.act(path, {});
+        this.el("back10").onclick = () => this.act("/seek", { delta_ms: -10000 });
+        this.el("fwd10").onclick = () => this.act("/seek", { delta_ms: 10000 });
+        this.el("bar").onclick = event => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            this.act("/seek", { percent: (event.clientX - rect.left) / rect.width * 100 });
+        };
+        const volume = this.el("volume");
+        volume.oninput = () => {
+            this.dragging = true;
+            this.el("volval").textContent = volume.value;
+        };
+        volume.onchange = async () => {
+            await this.act("/volume", { volume: Number(volume.value) });
+            this.dragging = false;
+        };
+        this.el("playuri").onclick = () => this.playUri();
+        this.el("uri").onkeydown = event => { if (event.key === "Enter") this.playUri(); };
+        const token = this.el("token");
+        token.value = this.api.token;
+        token.onchange = () => {
+            this.api.setToken(token.value.trim());
+            this.source?.close();
+            this.connect();
+        };
+        document.onkeydown = event => {
+            if (event.target.tagName === "INPUT") return;
+            const keys = { " ": ["/toggle", {}], ArrowRight: ["/seek", { delta_ms: 5000 }], ArrowLeft: ["/seek", { delta_ms: -5000 }], ArrowUp: ["/volume", { delta: 5 }], ArrowDown: ["/volume", { delta: -5 }], n: ["/next", {}], p: ["/previous", {}] };
+            const hit = keys[event.key];
+            if (!hit) return;
+            event.preventDefault();
+            this.act(...hit);
+        };
+    }
+
+    playUri() {
+        const raw = this.el("uri").value.trim();
+        const link = raw.match(/open\.spotify\.com\/(?:intl-[a-z]+\/)?(track|album|playlist|artist|episode|show)\/([A-Za-z0-9]+)/);
+        const uri = link ? `spotify:${link[1]}:${link[2]}` : raw;
+        if (uri) this.act("/play", { uri });
+    }
+
+    async act(path, args) {
+        try {
+            const state = await this.api.call(path, args);
+            this.error("");
+            if (state && "playing" in state) this.apply({ connected: true, ...state });
+        } catch (error) {
+            this.error(error.message);
+        }
+    }
+
+    error(message) {
+        this.el("error").textContent = message;
+    }
+
+    connect() {
+        this.source = this.api.events(state => this.apply(state), () => this.offline("bridge offline"));
+    }
+
+    offline(text) {
+        this.el("dot").classList.remove("on");
+        this.el("conn").textContent = text;
+    }
+
+    apply(state) {
+        if (!state.connected) return this.offline("spotify not connected");
+        this.el("dot").classList.add("on");
+        this.el("conn").textContent = "connected";
+        if (!("playing" in state)) return;
+        this.state = state;
+        this.receivedAt = Date.now();
+        const track = state.track;
+        this.el("title").textContent = track?.name || "Nothing playing";
+        this.el("artist").textContent = track ? `${track.artists.join(", ")}${track.album ? " — " + track.album : ""}` : "";
+        this.el("art").style.backgroundImage = track?.image ? `url("${track.image}")` : "";
+        this.el("toggle").textContent = state.playing ? "Pause" : "Play";
+        this.el("shuffle").classList.toggle("on", state.shuffle);
+        this.el("repeat").classList.toggle("on", state.repeat !== "off");
+        this.el("repeat").textContent = state.repeat === "track" ? "Rep 1" : "Rep";
+        const can = state.can || {};
+        this.el("shuffle").disabled = can.shuffle === false;
+        this.el("repeat").disabled = can.repeat_context === false && can.repeat_track === false && state.repeat === "off";
+        this.el("next").disabled = can.next === false;
+        this.el("back10").disabled = this.el("fwd10").disabled = can.seek === false;
+        this.el("mute").classList.toggle("on", state.muted);
+        this.el("like").classList.toggle("on", state.liked);
+        this.el("like").textContent = state.liked ? "Liked" : "Like";
+        if (!this.dragging) {
+            this.el("volume").value = state.volume;
+            this.el("volval").textContent = state.volume;
+        }
+        this.el("dur").textContent = this.format(state.duration_ms);
+        if (track?.uri !== this.trackUri) {
+            this.trackUri = track?.uri || null;
+            this.loadLyrics();
+        }
+    }
+
+    async loadLyrics() {
+        const uri = this.trackUri;
+        try {
+            const data = await this.api.call("/lyrics");
+            if (uri === this.trackUri) this.lyrics.load(data);
+        } catch {
+            this.lyrics.load({ sync_type: "NONE", lines: [] });
+        }
+    }
+
+    position() {
+        if (!this.state) return 0;
+        const base = this.state.position_ms;
+        return this.state.playing ? Math.min(base + Date.now() - this.receivedAt, this.state.duration_ms) : base;
+    }
+
+    format(ms) {
+        const total = Math.max(0, Math.floor((ms || 0) / 1000));
+        return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+    }
+
+    tick() {
+        if (this.state) {
+            const position = this.position();
+            this.el("fill").style.width = `${this.state.duration_ms ? position / this.state.duration_ms * 100 : 0}%`;
+            this.el("pos").textContent = this.format(position);
+            this.lyrics.update(position);
+        }
+        requestAnimationFrame(() => this.tick());
+    }
+}
+
+new Remote();
+</script>
+</body>
+</html>
